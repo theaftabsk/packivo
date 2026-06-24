@@ -11,10 +11,19 @@ export class TenantMiddleware implements NestMiddleware {
 
     if (!subdomain && req.headers.host) {
       const host = req.headers.host;
-      const parts = host.split('.');
-      // Support subdomain.domain.com
-      if (parts.length > 2) {
-        subdomain = parts[0];
+      const isHostingDomain =
+        host.includes('railway.app') ||
+        host.includes('rlwy.net') ||
+        host.includes('vercel.app') ||
+        host.includes('localhost') ||
+        host.includes('127.0.0.1');
+
+      if (!isHostingDomain) {
+        const parts = host.split('.');
+        // Support subdomain.domain.com
+        if (parts.length > 2) {
+          subdomain = parts[0];
+        }
       }
     }
 
