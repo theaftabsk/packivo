@@ -1,0 +1,10 @@
+{
+  "name": "packivo-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix backend",
+    "start": "npm run start:prod --prefix backend",
+    "postinstall": "npm install --prefix backend && npx prisma generate --schema=backend/prisma/schema.prisma"
+  }
+}
