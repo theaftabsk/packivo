@@ -1,0 +1,518 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// SaaS Tenant/Company Table
+model Tenant {
+  id                 String     @id @default(uuid())
+  name               String
+  subdomain          String     @unique // e.g. "gigani", "abcpack"
+  plan               PlanType   @default(STARTER)
+  status             Status     @default(ACTIVE)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  
+  // Email verification & SaaS Trial/Status fields
+  emailVerified      Boolean    @default(false)
+  verificationToken  String?
+  verificationExpires DateTime?
+  trialStart         DateTime?
+  trialEnd           DateTime?
+  subscriptionStatus String     @default("TRIAL") // TRIAL, STARTER, PROFESSIONAL, ENTERPRISE, PENDING_APPROVAL
+
+  // Relations
+  users              User[]
+  factories          Factory[]
+  vendors            Vendor[]
+  customers          Customer[]
+  products           Product[]
+  duplexPurchases    DuplexPurchase[]
+  duplexStocks       DuplexStock[]
+  printJobs          PrintJob[]
+  kraftPurchases     KraftPurchase[]
+  kraftStocks        KraftStock[]
+  productionJobs     ProductionJob[]
+  dispatches         Dispatch[]
+  auditLogs          AuditLog[]
+  subscriptions      Subscription[]
+  notifications      Notification[]
+  printers           Printer[]
+  setting            Setting?
+}
+
+enum PlanType {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum Status {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+// User Accounts with Role Based Access Control (RBAC)
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      UserRole
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  factoryId String?
+  factory   Factory? @relation(fields: [factoryId], references: [id])
+  createdAt DateTime @default(now())
+  
+  auditLogs AuditLog[]
+}
+
+enum UserRole {
+  SUPER_ADMIN      // SaaS Owner
+  TENANT_ADMIN     // Factory Owner
+  PURCHASE_USER
+  PRODUCTION_USER
+  DISPATCH_USER
+  VIEWER
+}
+
+// Factory branch for Multi-Factory feature
+model Factory {
+  id        String   @id @default(uuid())
+  name      String
+  location  String?
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users     User[]
+}
+
+// Master Data: Printers (Print job companies)
+model Printer {
+  id            String     @id @default(uuid())
+  printerCode   String     // Auto-generated e.g. PRN-0001
+  name          String
+  contactPerson String?
+  mobile        String?
+  email         String?
+  gstNumber     String?
+  address       String?
+  city          String?
+  state         String?
+  remarks       String?
+  isActive      Boolean    @default(true)
+
+  tenantId      String
+  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  @@unique([printerCode, tenantId])
+  @@index([tenantId])
+  @@index([name])
+}
+
+// Master Data: Customers / Buyers
+model Customer {
+  id              String    @id @default(uuid())
+  customerCode    String    // Auto-generated e.g. CUS-0001
+  customerName    String
+  contactPerson   String?
+  mobile          String?
+  email           String?
+  gstNumber       String?
+  billingAddress  String?
+  shippingAddress String?
+  city            String?
+  state           String?
+  remarks         String?
+  isActive        Boolean   @default(true)
+
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  products        Product[]
+  dispatches      Dispatch[]
+
+  @@unique([customerCode, tenantId])
+  @@index([tenantId])
+  @@index([customerName])
+}
+
+// Master Data: Vendors (Paper supplier or Printer)
+model Vendor {
+  id                  String    @id @default(uuid())
+  vendorCode          String    // Unique vendor code, e.g. VND-0001
+  vendorName          String
+  contactPerson       String?
+  mobile              String?
+  whatsapp            String?
+  email               String?
+  gstNumber           String?
+
+  suppliedMaterials   String[]  // e.g. ["Kraft", "Duplex", "FBB Board", "Custom"]
+
+  remarks             String?
+  isActive            Boolean   @default(true)
+
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  duplexPurchases     DuplexPurchase[]
+  kraftPurchases      KraftPurchase[]
+  printJobs           PrintJob[]
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime? // For soft delete/archiving
+
+  @@unique([vendorCode, tenantId])
+  @@index([tenantId])
+  @@index([vendorName])
+  @@index([createdAt])
+}
+
+
+// Product / Job Master
+model Product {
+  id                        String         @id @default(uuid())
+  name                      String
+  customerId                String
+  customer                  Customer       @relation(fields: [customerId], references: [id])
+  
+  // Dimensions
+  boxSizeLength             Float
+  boxSizeWidth              Float
+  boxSizeHeight             Float
+  duplexSize                String         // e.g., "36x25"
+  kraftSize                 String         // e.g., "34x24"
+  
+  // Specs
+  plyType                   PlyType
+  printingMode              String         // Offset, Screen, Flexo
+  colorCount                Int            @default(1)
+  finishType                String?        // Gloss, Matt, UV
+  ups                       Int            @default(1) // Units per sheet
+  hasPartition              Boolean        @default(false)
+
+  // New Specs from Gigani ERP Spec Sheets
+  printingDetails           String?        // e.g., "Printed", "Unprinted"
+  specialColorCode          String?        // e.g., "kkyc"
+  finishSize                String?        // Carton Finish Size in Inches (e.g. "34 x 24")
+
+  // Carton GSM layer configurations
+  cartonTopPaperType        String?        // e.g., "Duplex", "Kraft"
+  cartonTopPaperGsm         Int?
+  cartonFlutingPaperType    String?        // e.g., "Kraft"
+  cartonFlutingPaperGsm     Int?
+  cartonBackingPaperType    String?        // e.g., "Kraft"
+  cartonBackingPaperGsm     Int?
+
+  // Partition details (visible if hasPartition is true)
+  partitionSize             String?        // Partition Sheet Size in Inches (e.g. "23 x 24")
+  partitionPly              String?        // e.g. "3-ply", "5-ply"
+  partitionUps              String?        // e.g. "2"
+  partitionTopPaperType     String?
+  partitionTopPaperGsm      Int?
+  partitionFlutingPaperType String?
+  partitionFlutingPaperGsm  Int?
+  partitionBackingPaperType String?
+  partitionBackingPaperGsm  Int?
+  partitionImage            String?        // Base64 representation or URL
+
+  productImage              String?        // Base64 representation or URL
+  remarks                   String?
+  isActive                  Boolean        @default(true)
+  
+  tenantId                  String
+  tenant                    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  printJobs                 PrintJob[]
+  productionJobs            ProductionJob[]
+  dispatches                Dispatch[]
+
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+  deletedAt                 DateTime?
+
+  @@index([tenantId])
+  @@index([name])
+}
+
+enum PlyType {
+  THREE_PLY
+  FIVE_PLY
+}
+
+// Duplex Raw Material Purchase
+model DuplexPurchase {
+  id             String    @id @default(uuid())
+  vendorId       String
+  vendor         Vendor    @relation(fields: [vendorId], references: [id])
+  challanNo      String
+  gsm            Int
+  size           String
+  quantitySheets Int
+  weightKg       Float
+  rate           Float
+  purchaseDate   DateTime  @default(now())
+  deliveredTo    String?
+  invoicePath    String?
+  remarks        String?
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Duplex Paper Inventory (Track RAW vs PRINTED sheets)
+model DuplexStock {
+  id         String          @id @default(uuid())
+  gsm        Int
+  size       String
+  qtySheets  Int             @default(0)
+  type       DuplexStockType
+  tenantId   String
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([gsm, size, type, tenantId])
+}
+
+enum DuplexStockType {
+  RAW
+  PRINTED
+}
+
+// Printing Job Management
+model PrintJob {
+  id                   String         @id @default(uuid())
+  jobNo                String         @unique
+  productId            String
+  product              Product        @relation(fields: [productId], references: [id])
+  printerId            String
+  printer              Vendor         @relation(fields: [printerId], references: [id])
+  plannedQty           Int
+  issuedSheets         Int
+  returnedSheets       Int            @default(0)
+  availableStock       Int            @default(0)
+  cuttingSize          String?
+  expectedOutcomeImage String?
+  remarks              String?
+  status               PrintJobStatus @default(PENDING)
+  createdAt            DateTime       @default(now())
+  tenantId             String
+  tenant               Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([jobNo])
+  @@index([printerId])
+}
+
+enum PrintJobStatus {
+  PENDING
+  ISSUED
+  COMPLETED
+  CANCELLED
+}
+
+// Kraft Raw Material Purchase
+model KraftPurchase {
+  id           String   @id @default(uuid())
+  vendorId     String
+  vendor       Vendor   @relation(fields: [vendorId], references: [id])
+  challanNo    String?  // e.g. CH-8892
+  invoiceNo    String?  // e.g. INV-2091
+  deliveredTo  String?  // e.g. GIGANI (Inhouse)
+  paperType    String?  // e.g. Natural, Semi Kraft, Golden Kraft
+  qtyRolls     Int      @default(1)
+  rollSize     Float    // Roll size in inches/cm
+  gsm          Int
+  weightKg     Float
+  rate         Float
+  remarks      String?
+  purchaseDate DateTime @default(now())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Kraft Roll Stock (Accumulated weights by size and GSM)
+model KraftStock {
+  id        String @id @default(uuid())
+  rollSize  Float
+  gsm       Int
+  weightKg  Float  @default(0)
+  tenantId  String
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([rollSize, gsm, tenantId])
+}
+
+// Production Planning & Jobs
+model ProductionJob {
+  id           String          @id @default(uuid())
+  jobCardNo    String          @unique
+  productId    String
+  product      Product         @relation(fields: [productId], references: [id])
+  targetQty    Int
+  producedQty  Int             @default(0)
+  status       ProductionStatus @default(PENDING)
+  plannedDate  DateTime        @default(now())
+  completedDate DateTime?
+  tenantId     String
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([status])
+}
+
+enum ProductionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Finished Goods Inventory
+model FinishedGoodsStock {
+  id          String   @id @default(uuid())
+  productId   String   @unique
+  totalStock  Int      @default(0)
+  allocatedStock Int   @default(0) // Reserved for pending dispatch
+}
+
+// Dispatch & Logistics (Delivery Challan)
+model Dispatch {
+  id               String   @id @default(uuid())
+  invoiceNo        String?
+  challanNo        String   @unique
+  customerId       String
+  customer         Customer @relation(fields: [customerId], references: [id])
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id])
+  qtyDispatched    Int
+  vehicleNo        String?
+  lrNo             String?  // Lorry Receipt Number
+  transporterName  String?
+  dispatchDate     DateTime @default(now())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([dispatchDate])
+  @@index([invoiceNo])
+}
+
+// Audit Logs for Operations
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String   // e.g. "PRODUCT_CREATE", "STOCK_ADJUST"
+  details   String   // JSON string detailing the old/new values
+  timestamp DateTime @default(now())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// SaaS Subscription Plan Table
+model Plan {
+  id           String         @id @default(uuid())
+  name         String         // e.g. "STARTER", "PROFESSIONAL", "ENTERPRISE"
+  price        Float          // e.g. 2999, 5999, 11999
+  maxUsers     Int
+  maxFactories Int
+  features     String[]       // List of features
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  
+  subscriptions Subscription[]
+}
+
+// Tenant Subscriptions Log
+model Subscription {
+  id           String             @id @default(uuid())
+  tenantId     String
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId       String
+  plan         Plan               @relation(fields: [planId], references: [id])
+  startDate    DateTime           @default(now())
+  endDate      DateTime
+  status       SubscriptionStatus @default(ACTIVE)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  
+  payments     Payment[]
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+// Payment transactions Log
+model Payment {
+  id             String        @id @default(uuid())
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Float
+  currency       String        @default("INR")
+  status         PaymentStatus @default(PENDING)
+  gateway        String        // "RAZORPAY" or "STRIPE"
+  gatewayRef     String?       // Transaction / Order ID from gateway
+  screenshot     String?       // Manual payment screenshot
+  transactionId  String?       // Manual payment transaction id
+  createdAt      DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// Tenant Custom Settings (Formula settings, notification configs)
+model Setting {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Company Information
+  companyName    String   @default("GIGANI Packaging")
+  gstinNumber    String   @default("24XXXXXXXXXXXXX")
+  factoryAddress String   @default("Umargam, Gujarat")
+
+  // Formulas
+  formulaThreePly String  @default("T + (F * 1.5) + B")
+  formulaFivePly  String  @default("T + (F * 3.0) + B")
+  
+  // Custom Settings
+  lowStockThreshold Int   @default(100)
+  enableWhatsApp    Boolean @default(false)
+  updatedAt      DateTime @updatedAt
+}
+
+// Alerts / Notifications Log
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  type      String   // e.g. "LOW_STOCK", "PAYMENT_REMINDER", "PRODUCTION_COMPLETED"
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
