@@ -1,5 +1,11 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+const getUrl = (path: string): string => {
+  const cleanBase = BASE_URL.endsWith("/") ? BASE_URL.slice(0, -1) : BASE_URL;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${cleanBase}${cleanPath}`;
+};
+
 export function getAuthHeaders(): HeadersInit {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -28,7 +34,7 @@ function clearAuthAndRedirect() {
 
 export const api = {
   async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(getUrl(path), {
       method: "GET",
       headers: getAuthHeaders(),
     });
@@ -46,7 +52,7 @@ export const api = {
   },
 
   async post<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(getUrl(path), {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(body),
@@ -65,7 +71,7 @@ export const api = {
   },
 
   async patch<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(getUrl(path), {
       method: "PATCH",
       headers: getAuthHeaders(),
       body: JSON.stringify(body),
@@ -84,7 +90,7 @@ export const api = {
   },
 
   async delete<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(getUrl(path), {
       method: "DELETE",
       headers: getAuthHeaders(),
     });
