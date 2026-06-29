@@ -65,7 +65,7 @@ async function main() {
   const tenant = await prisma.tenant.create({
     data: {
       name: 'Packivo Packaging Factory',
-      subdomain: 'gigani',
+      subdomain: 'packivo',
       plan: 'PROFESSIONAL',
       status: 'ACTIVE',
       emailVerified: true,
